@@ -72,11 +72,11 @@ monitoring:
       pullPolicy: IfNotPresent
     resources:
       limits:
-        cpu: 0.2
-        memory: 128Mi
+        cpu: 1
+        memory: 256Mi
       requests:
-        cpu: 0.2
-        memory: 128Mi
+        cpu: 1
+        memory: 256Mi
     googleAuth:
     config:
     env:
@@ -106,8 +106,13 @@ serviceAccount:
 kube-state-metrics:
   enabled: false
   namespaceOverride: kube-system
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
 
 prometheus-node-exporter:
   enabled: false
   namespaceOverride: kube-system
-
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9100"
