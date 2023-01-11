@@ -1,14 +1,12 @@
 // Copyright (c) Aptos
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::emitter::wait_for_single_account_sequence;
 use crate::{
-    emitter::{RETRY_POLICY, SEND_AMOUNT},
+    emitter::{wait_for_single_account_sequence, RETRY_POLICY, SEND_AMOUNT},
     query_sequence_number, EmitJobRequest, EmitModeParams,
 };
 use anyhow::{anyhow, format_err, Context, Result};
-use aptos::common::types::EncodingType;
-use aptos::common::utils::prompt_yes;
+use aptos::common::{types::EncodingType, utils::prompt_yes};
 use aptos_crypto::ed25519::{Ed25519PrivateKey, Ed25519PublicKey};
 use aptos_infallible::Mutex;
 use aptos_logger::{debug, info, sample, sample::SampleRate, warn};
@@ -30,9 +28,12 @@ use core::{
 use futures::StreamExt;
 use rand::{rngs::StdRng, seq::SliceRandom};
 use rand_core::SeedableRng;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 #[derive(Debug)]
 pub struct AccountMinter<'t> {
@@ -53,6 +54,7 @@ impl<'t> AccountMinter<'t> {
             rng,
         }
     }
+
     /// workflow of create accounts:
     /// 1. Use given source_account as the money source
     /// 1a. Optionally, and if it is root account, mint balance to that account
@@ -70,9 +72,8 @@ impl<'t> AccountMinter<'t> {
         total_requested_accounts: usize,
     ) -> Result<Vec<LocalAccount>> {
         let mut accounts = vec![];
-        let expected_num_seed_accounts = (total_requested_accounts / 50)
-            .max(1)
-            .min(CREATION_PARALLELISM);
+        let expected_num_seed_accounts =
+            (total_requested_accounts / 50).clamp(1, CREATION_PARALLELISM);
         let num_accounts = total_requested_accounts - accounts.len(); // Only minting extra accounts
         let coins_per_account = (req.expected_max_txns / total_requested_accounts as u64)
             .checked_mul(SEND_AMOUNT + req.expected_gas_per_txn)
@@ -203,7 +204,7 @@ impl<'t> AccountMinter<'t> {
                 )
             });
 
-        // Each future creates 50 accounts, limit concurrency to 30.
+        // Each future creates 10 accounts, limit concurrency to 100.
         let stream = futures::stream::iter(account_futures).buffer_unordered(CREATION_PARALLELISM);
         // wait for all futures to complete
         let mut minted_accounts = stream
@@ -363,7 +364,7 @@ where
 
     // Wait for source account to exist, this can happen because the corresponding REST endpoint might
     // not be up to date with the latest ledger state and requires some time for syncing.
-    wait_for_single_account_sequence(&client, &source_account, Duration::from_secs(30)).await?;
+    wait_for_single_account_sequence(&client, &source_account, Duration::from_secs(60)).await?;
     while i < num_new_accounts {
         let batch_size = min(max_num_accounts_per_batch, num_new_accounts - i);
         let mut batch = if reuse_account {
@@ -460,11 +461,12 @@ pub async fn execute_and_wait_transactions(
     txns: Vec<SignedTransaction>,
     failure_counter: &AtomicUsize,
 ) -> Result<()> {
+    let start_seq_num = account.sequence_number();
     debug!(
         "[{:?}] Submitting transactions {} - {} for {}",
         client.path_prefix_string(),
-        account.sequence_number() - txns.len() as u64,
-        account.sequence_number(),
+        start_seq_num - txns.len() as u64,
+        start_seq_num,
         account.address()
     );
 
@@ -494,7 +496,7 @@ pub async fn execute_and_wait_transactions(
                     client.path_prefix_string(), e, txns.len(), txns.first()
                 );
                 return Err(format_err!("{:?}", e));
-            }
+            },
             Ok(result) => result.into_inner(),
         };
         let mut failures = results
@@ -583,17 +585,39 @@ pub async fn execute_and_wait_transactions(
     let state = state.into_inner();
 
     for txn in state.txns.iter() {
-        RETRY_POLICY
-            .retry(move || {
-                client.wait_for_transaction_by_hash_bcs(
-                    txn.clone().committed_hash(),
-                    txn.expiration_timestamp_secs(),
-                    Some(Duration::from_secs(120)),
-                    None,
-                )
-            })
+        client
+            .wait_for_transaction_by_hash_bcs(
+                txn.clone().committed_hash(),
+                txn.expiration_timestamp_secs(),
+                Some(Duration::from_secs(120)),
+                None,
+            )
             .await
-            .map_err(|e| format_err!("Failed to wait for transactions: {:?}", e))?;
+            .map_err(|e| {
+                warn!(
+                    "Failed to wait for transactions: {:?}, txn: {:?}. [{:?}] We were submitting transactions for account {}: from {} - {}, now at {}",
+                    e,
+                    txn,
+                    client.path_prefix_string(),
+                    account.address(),
+                    start_seq_num - state.txns.len() as u64,
+                    start_seq_num,
+                    account.sequence_number()
+                );
+
+                // We shouldn't be able to reach this point.
+                // This failure is unrecoverable, we end the test at this point.
+                // It it sporadically happens in forge, and we need to debug why.
+                // By default, we end the test and stop the nodes, before the next
+                // counters poll happens after this.
+                // Wait for 30s here, to make sure Grafana counters for expired transactions, etc,
+                // get pulled from all the nodes, so we can investigate.
+                std::thread::sleep(Duration::from_secs(30));
+                format_err!(
+                    "Failed to wait for transactions: {:?}",
+                    e,
+                )
+            })?;
     }
 
     debug!(
@@ -605,4 +629,4 @@ pub async fn execute_and_wait_transactions(
     Ok(())
 }
 
-const CREATION_PARALLELISM: usize = 200;
+const CREATION_PARALLELISM: usize = 100;

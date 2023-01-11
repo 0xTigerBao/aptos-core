@@ -13,12 +13,12 @@ slug: "glossary"
 
 ### Account
 
-- An **account** in the Aptos blockchain is a container for an arbitrary number of [Move modules](#move-module) and [Move resources](#move-resources). This essentially means that the state of each [account](/concepts/basics-accounts) is comprised of both code and data.
+- An **account** in the Aptos blockchain is a container for an arbitrary number of [Move modules](#move-module) and [Move resources](#move-resources). This essentially means that the state of each [account](/concepts/accounts) is comprised of both code and data.
 - The account is identified by an [account address](#account-address).
 
 ### Account Address
 
-- The address of a Aptos account, see [basics on accounts](/concepts/basics-accounts#initial-account-setup).
+- The address of a Aptos account, see [basics on accounts](/concepts/accounts#initial-account-setup).
 
 ### AptosBFT
 
@@ -290,6 +290,12 @@ See [Resource accounts](../guides/resource-accounts.md).
 - **State root hash** is a [Merkle hash](https://en.wikipedia.org/wiki/Merkle_tree) over all keys and values the state of the Aptos blockchain at a given version.
 
 ## T
+
+### Table
+
+- A [**table**](https://github.com/aptos-labs/aptos-core/blob/main/aptos-move/framework/aptos-stdlib/doc/table.md) implements the Table type and in Aptos is used to store information as key-value data within an account at large scale.
+
+See [`table.move`](https://github.com/aptos-labs/aptos-core/blob/main/aptos-move/framework/aptos-stdlib/sources/table.move) for the associated Aptos source file.
 
 ### Transaction
 

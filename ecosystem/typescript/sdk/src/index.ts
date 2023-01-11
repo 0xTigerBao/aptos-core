@@ -13,3 +13,8 @@ export * as TokenTypes from "./token_types";
 export * as Types from "./generated/index";
 export * as AptosTypes from "./aptos_types";
 export { derivePath } from "./utils/hd-key";
+export {
+  deserializePropertyMap,
+  deserializeValueBasedOnTypeTag,
+  getPropertyValueRaw,
+} from "./utils/property_map_serde";

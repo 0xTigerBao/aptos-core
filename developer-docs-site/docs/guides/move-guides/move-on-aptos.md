@@ -9,7 +9,7 @@ The Aptos blockchain consists of validator nodes that run a consensus protocol. 
 
 ## What is Move?
 
-Move is a safe and secure programming language for Web3 that emphasizes **scarcity** and **access control**. An assets in Move can be represented by or stored within *resource*. **Scarcity** is enforced by default as structs cannot be duplicated. Only structs that have explicitly been defined at the bytecode layer as *copy* can be duplicated.
+Move is a safe and secure programming language for Web3 that emphasizes **scarcity** and **access control**. Any assets in Move can be represented by or stored within *resource*. **Scarcity** is enforced by default as structs cannot be duplicated. Only structs that have explicitly been defined at the bytecode layer as *copy* can be duplicated.
 
 **Access control** comes from both the notion of accounts as well as module access privileges. A module in Move may either be a library or a program that can create, store, or transfer assets. Move ensures that only public module functions may be accessed by other modules. Unless a struct has a public constructor, it can only be constructed within the module that defines it. Similarly, fields within a struct can only be accessed and mutated within its module that or via public accessors and setters.
 
@@ -94,7 +94,7 @@ Contrast the following two functions of implementing a coin transfer using depos
 
 ```rust
 public fun transfer<T>(sender: &signer, recipient: address, amount: u64) {
-    let coin = withdraw(&signer, amount);
+    let coin = withdraw(&sender, amount);
     deposit(recipient, coin);
 }
 ```
@@ -137,7 +137,7 @@ In our development of the Aptos Core Framework, we have several examples of wher
 
 * A `Token` cannot be directly inserted into another user's account unless they already have some of that `Token`
 * `TokenTransfers` allows a user to explicitly claim a token stored in another user's resource effectively using an access control list to gain that access
-* In `Coin` a user can directly transfer a `Coint<T>` into another user's account as long as the receiving user has already a `CoinStore<Coin<T>>` resource to store that coin.
+* In `Coin` a user can directly transfer a `Coin<T>` into another user's account as long as the receiving user has already a `CoinStore<Coin<T>>` resource to store that coin.
 
 A less rigorous effort on our `Token` may have allowed users to airdrop tokens directly into another users account, which would add additional storage to their accounts as well as make them owners of content that they did not first approve.
 

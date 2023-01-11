@@ -1,63 +1,77 @@
 // Copyright (c) Aptos
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::account::key_rotation::LookupAddress;
-use crate::account::{
-    create::{CreateAccount, DEFAULT_FUNDED_COINS},
-    fund::FundWithFaucet,
-    key_rotation::{RotateKey, RotateSummary},
-    list::{ListAccount, ListQuery},
-    transfer::{TransferCoins, TransferSummary},
+use crate::{
+    account::{
+        create::{CreateAccount, DEFAULT_FUNDED_COINS},
+        fund::FundWithFaucet,
+        key_rotation::{LookupAddress, RotateKey, RotateSummary},
+        list::{ListAccount, ListQuery},
+        transfer::{TransferCoins, TransferSummary},
+    },
+    common::{
+        init::{InitTool, Network},
+        types::{
+            account_address_from_public_key, AccountAddressWrapper, CliError, CliTypedResult,
+            EncodingOptions, FaucetOptions, GasOptions, KeyType, MoveManifestAccountWrapper,
+            MovePackageDir, OptionalPoolAddressArgs, PrivateKeyInputOptions, PromptOptions,
+            PublicKeyInputOptions, RestOptions, RngArgs, SaveFile, TransactionOptions,
+            TransactionSummary,
+        },
+        utils::write_to_file,
+    },
+    governance::CompileScriptFunction,
+    move_tool::{
+        ArgWithType, CompilePackage, DownloadPackage, FrameworkPackageArgs, IncludedArtifacts,
+        IncludedArtifactsArgs, InitPackage, MemberId, PublishPackage, RunFunction, RunScript,
+        TestPackage,
+    },
+    node::{
+        AnalyzeMode, AnalyzeValidatorPerformance, GetStakePool, InitializeValidator,
+        JoinValidatorSet, LeaveValidatorSet, OperatorArgs, OperatorConfigFileArgs,
+        ShowValidatorConfig, ShowValidatorSet, ShowValidatorStake, StakePoolResult,
+        UpdateConsensusKey, UpdateValidatorNetworkAddresses, ValidatorConfig,
+        ValidatorConsensusKeyArgs, ValidatorNetworkAddressesArgs,
+    },
+    op::key::{ExtractPeer, GenerateKey, NetworkKeyInputOptions, SaveKey},
+    stake::{
+        AddStake, IncreaseLockup, InitializeStakeOwner, SetDelegatedVoter, SetOperator,
+        UnlockStake, WithdrawStake,
+    },
+    CliCommand,
 };
-use crate::common::init::{InitTool, Network};
-use crate::common::types::{
-    account_address_from_public_key, AccountAddressWrapper, CliError, CliTypedResult,
-    EncodingOptions, FaucetOptions, GasOptions, KeyType, MoveManifestAccountWrapper,
-    MovePackageDir, OptionalPoolAddressArgs, PrivateKeyInputOptions, PromptOptions,
-    PublicKeyInputOptions, RestOptions, RngArgs, SaveFile, TransactionOptions, TransactionSummary,
-};
-
-#[cfg(feature = "cli-framework-test-move")]
-use crate::common::utils::write_to_file;
-
-use crate::move_tool::{
-    ArgWithType, CompilePackage, DownloadPackage, FrameworkPackageArgs, IncludedArtifacts,
-    IncludedArtifactsArgs, InitPackage, MemberId, PublishPackage, RunFunction, TestPackage,
-};
-use crate::node::{
-    AnalyzeMode, AnalyzeValidatorPerformance, GetStakePool, InitializeValidator, JoinValidatorSet,
-    LeaveValidatorSet, OperatorArgs, OperatorConfigFileArgs, ShowValidatorConfig, ShowValidatorSet,
-    ShowValidatorStake, StakePoolResult, UpdateConsensusKey, UpdateValidatorNetworkAddresses,
-    ValidatorConfig, ValidatorConsensusKeyArgs, ValidatorNetworkAddressesArgs,
-};
-use crate::op::key::{ExtractPeer, GenerateKey, NetworkKeyInputOptions, SaveKey};
-use crate::stake::{
-    AddStake, IncreaseLockup, InitializeStakeOwner, SetDelegatedVoter, SetOperator, UnlockStake,
-    WithdrawStake,
-};
-use crate::CliCommand;
 use aptos_config::config::Peer;
-use aptos_crypto::ed25519::Ed25519PublicKey;
-use aptos_crypto::{bls12381, ed25519::Ed25519PrivateKey, x25519, PrivateKey};
+use aptos_crypto::{
+    bls12381,
+    ed25519::{Ed25519PrivateKey, Ed25519PublicKey},
+    x25519, PrivateKey,
+};
 use aptos_genesis::config::HostAndPort;
 use aptos_keygen::KeyGen;
 use aptos_logger::warn;
-use aptos_rest_client::aptos_api_types::{IdentifierWrapper, MoveStructTag};
-use aptos_rest_client::{aptos_api_types::MoveType, Transaction};
-use aptos_sdk::move_types::account_address::AccountAddress;
-use aptos_sdk::move_types::identifier::Identifier;
-use aptos_sdk::move_types::language_storage::ModuleId;
+use aptos_rest_client::{
+    aptos_api_types::{IdentifierWrapper, MoveStructTag, MoveType},
+    Transaction,
+};
+use aptos_sdk::move_types::{
+    account_address::AccountAddress, identifier::Identifier, language_storage::ModuleId,
+};
 use aptos_temppath::TempPath;
 use aptos_types::on_chain_config::ValidatorSet;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::{collections::BTreeMap, mem, path::PathBuf, str::FromStr, time::Duration};
-
+use std::{
+    collections::{BTreeMap, HashMap},
+    mem,
+    path::PathBuf,
+    str::FromStr,
+    time::Duration,
+};
+use tempfile::TempDir;
+use thiserror::__private::PathAsDisplay;
 #[cfg(feature = "cli-framework-test-move")]
-use thiserror::private::PathAsDisplay;
-
+use thiserror::__private::PathAsDisplay;
 use tokio::time::{sleep, Instant};
 
 #[cfg(test)]
@@ -142,6 +156,16 @@ impl CliTestFramework {
 
     pub fn add_account_to_cli(&mut self, private_key: Ed25519PrivateKey) -> usize {
         let address = account_address_from_public_key(&private_key.public_key());
+        self.account_addresses.push(address);
+        self.account_keys.push(private_key);
+        self.account_keys.len() - 1
+    }
+
+    pub fn add_account_with_address_to_cli(
+        &mut self,
+        private_key: Ed25519PrivateKey,
+        address: AccountAddress,
+    ) -> usize {
         self.account_addresses.push(address);
         self.account_keys.push(private_key);
         self.account_keys.len() - 1
@@ -365,14 +389,7 @@ impl CliTestFramework {
         amount: u64,
     ) -> CliTypedResult<Vec<TransactionSummary>> {
         AddStake {
-            txn_options: self.transaction_options(
-                index,
-                // TODO(greg): revisit after fixing gas estimation
-                Some(GasOptions {
-                    gas_unit_price: Some(1),
-                    max_gas: Some(10000),
-                }),
-            ),
+            txn_options: self.transaction_options(index, None),
             amount,
         }
         .execute()
@@ -396,7 +413,7 @@ impl CliTestFramework {
         &self,
         index: usize,
         amount: u64,
-    ) -> CliTypedResult<TransactionSummary> {
+    ) -> CliTypedResult<Vec<TransactionSummary>> {
         WithdrawStake {
             node_op_options: self.transaction_options(index, None),
             amount,
@@ -539,14 +556,7 @@ impl CliTestFramework {
         operator_index: Option<usize>,
     ) -> CliTypedResult<TransactionSummary> {
         InitializeStakeOwner {
-            txn_options: self.transaction_options(
-                owner_index,
-                // TODO(greg): revisit after fixing gas estimation
-                Some(GasOptions {
-                    gas_unit_price: Some(1),
-                    max_gas: Some(100000),
-                }),
-            ),
+            txn_options: self.transaction_options(owner_index, None),
             initial_stake_amount,
             operator_address: operator_index.map(|idx| self.account_id(idx)),
             voter_address: voter_index.map(|idx| self.account_id(idx)),
@@ -616,7 +626,7 @@ impl CliTestFramework {
                 _ => {
                     sleep(Duration::from_millis(500)).await;
                     result = self.list_account(index, ListQuery::Balance).await;
-                }
+                },
             };
         }
 
@@ -780,6 +790,7 @@ impl CliTestFramework {
             framework_package_args: FrameworkPackageArgs {
                 framework_git_rev: None,
                 framework_local_dir: framework_dir,
+                skip_fetch_latest_git_deps: false,
             },
         }
         .execute()
@@ -886,11 +897,59 @@ impl CliTestFramework {
         .await
     }
 
+    pub async fn run_script(
+        &self,
+        index: usize,
+        script_contents: &str,
+    ) -> CliTypedResult<TransactionSummary> {
+        // Make a temporary directory for compilation
+        let temp_dir = TempDir::new().map_err(|err| {
+            CliError::UnexpectedError(format!("Failed to create temporary directory {}", err))
+        })?;
+
+        let source_path = temp_dir.path().join("script.move");
+        write_to_file(
+            source_path.as_path(),
+            &source_path.as_display().to_string(),
+            script_contents.as_bytes(),
+        )
+        .unwrap();
+
+        RunScript {
+            txn_options: self.transaction_options(index, None),
+            compile_proposal_args: CompileScriptFunction {
+                script_path: Some(source_path),
+                compiled_script_path: None,
+                framework_package_args: FrameworkPackageArgs {
+                    framework_git_rev: None,
+                    framework_local_dir: Some(Self::aptos_framework_dir()),
+                    skip_fetch_latest_git_deps: false,
+                },
+                bytecode_version: None,
+            },
+            args: Vec::new(),
+            type_args: Vec::new(),
+        }
+        .execute()
+        .await
+    }
+
+    fn aptos_framework_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("aptos-move")
+            .join("framework")
+            .join("aptos-framework")
+    }
+
     pub fn move_options(&self, account_strs: BTreeMap<&str, &str>) -> MovePackageDir {
         MovePackageDir {
             package_dir: Some(self.move_dir()),
             output_dir: None,
             named_addresses: Self::named_addresses(account_strs),
+            skip_fetch_latest_git_deps: true,
+            bytecode_version: None,
         }
     }
 
