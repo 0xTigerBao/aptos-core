@@ -1,13 +1,48 @@
 # Homebrew Aptos
 
+Homebrew is a package manager that works for MacOS Silicon and Intel chips as well as Linux distributions like Debian and Ubuntu. 
+
 The [Aptos command line interface (CLI)](https://aptos.dev/cli-tools/aptos-cli-tool/install-aptos-cli) may be installed via [Homebrew](https://brew.sh/) for simplicity. This is an in-depth overview of Homebrew and the Aptos formula. In this guide, we go over each section of the Homebrew formula and steps to implement changes in the future.
 
 ## Quick guide
 
 - [Formula in Homebrew GitHub](https://github.com/Homebrew/homebrew-core/blob/master/Formula/aptos.rb)
 - [Aptos 1.0.3 New Formula PR for GitHub](https://github.com/Homebrew/homebrew-core/pull/119832)
+- [Aptos Formula Fix PR to use build_cli_release.sh](https://github.com/Homebrew/homebrew-core/pull/120051)
 
-### Getting started
+## Getting started
+
+To begin, first ensure that homebrew is correctly installed on your computer. Visit [brew.sh](https://brew.sh/) to learn how you can set it up!
+
+To test that it works correctly, try 
+
+```bash
+brew help
+```
+
+Once homebrew is installed, run
+
+```bash
+brew install aptos
+```
+
+to test that it installed correctly, try
+
+```bash
+aptos --help
+
+# This should return something like
+
+# aptos 1.0.5
+# Aptos Labs <opensource@aptoslabs.com>
+# Command Line Interface (CLI) for developing and interacting with the Aptos blockchain
+# ...
+```
+
+## Change guide
+
+Note: This guide is for developers who are trying to update the Aptos homebrew formula.
+
 Copy the `aptos.rb` file to your `homebrew` `formula` directory. For example, on macOS with an M1, this will likely be:
 
 ```bash
@@ -121,7 +156,7 @@ going forward, we would modify the formula slightly. See the comments below for 
 
   on_linux do
     depends_on "pkg-config" => :build
-    # Might need to use "openssl@1.1", let's see https://docs.rs/openssl/latest/openssl/#automatic
+    depends_on "zip" => :build
     depends_on "openssl@3"
     depends_on "systemd"
   end
@@ -132,12 +167,17 @@ going forward, we would modify the formula slightly. See the comments below for 
   # toolchain, we can remove the use of rustup-init, replacing it with a 
   # depends_on "rust" => :build
   # above and build the binary without rustup as a dependency
+  #
+  # Uses build_cli_release.sh for creating the compiled binaries.
+  # This drastically reduces their size (ie. 2.2 GB on Linux for release
+  # build becomes 40 MB when run with opt-level = "z", strip, lto, etc).
+  # See cargo.toml [profile.cli] section for more details
   def install
     system "#{Formula["rustup-init"].bin}/rustup-init",
       "-qy", "--no-modify-path", "--default-toolchain", "1.64"
     ENV.prepend_path "PATH", HOMEBREW_CACHE/"cargo_cache/bin"
-    system "cargo", "install", *std_cargo_args(path: "crates/aptos")
-    bin.install "target/release/aptos"
+    system "./scripts/cli/build_cli_release.sh", "homebrew"
+    bin.install "target/cli/aptos"
   end
 ```
 

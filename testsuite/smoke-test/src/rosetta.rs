@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Foundation
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::smoke_test_environment::SwarmBuilder;
@@ -279,7 +279,7 @@ async fn test_account_balance() {
 
     let mut account_4 = swarm
         .aptos_public_info()
-        .create_and_fund_user_account(10_000_000)
+        .create_and_fund_user_account(10_000_000_000)
         .await
         .unwrap();
 
@@ -896,22 +896,6 @@ async fn test_block() {
         None,
         None,
         None,
-    )
-    .await
-    .unwrap_err();
-
-    // This one will fail (and skip estimation of gas)
-    transfer_and_wait(
-        &rosetta_client,
-        &rest_client,
-        &network_identifier,
-        private_key_1,
-        AccountAddress::ONE,
-        20,
-        Duration::from_secs(5),
-        None,
-        Some(100000),
-        Some(min_gas_price),
     )
     .await
     .unwrap_err();

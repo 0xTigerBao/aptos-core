@@ -1,4 +1,5 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Foundation
+// Parts of the project are originally copyright © Meta Platforms, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
@@ -21,7 +22,10 @@ use aptos_types::{
     access_path::{AccessPath, Path},
     chain_id::ChainId,
     contract_event::{ContractEvent, EventWithVersion},
-    state_store::{state_key::StateKey, table::TableHandle},
+    state_store::{
+        state_key::{StateKey, StateKeyInner},
+        table::TableHandle,
+    },
     transaction::{
         EntryFunction, ExecutionStatus, ModuleBundle, RawTransaction, Script, SignedTransaction,
     },
@@ -230,21 +234,22 @@ impl<'a, R: MoveResolverExt + ?Sized> MoveConverter<'a, R> {
         op: WriteOp,
     ) -> Result<WriteSetChange> {
         let hash = state_key.hash().to_hex_literal();
-
+        let state_key = state_key.into_inner();
         match state_key {
-            StateKey::AccessPath(access_path) => {
+            StateKeyInner::AccessPath(access_path) => {
                 self.try_access_path_into_write_set_change(hash, access_path, op)
             },
-            StateKey::TableItem { handle, key } => {
+            StateKeyInner::TableItem { handle, key } => {
                 self.try_table_item_into_write_set_change(hash, handle, key, op)
             },
-            StateKey::Raw(_) => Err(format_err!(
+            StateKeyInner::Raw(_) => Err(format_err!(
                 "Can't convert account raw key {:?} to WriteSetChange",
                 state_key
             )),
         }
     }
 
+    // TODO: Consider expanding ResourceGroup into Resource and returning Vec<WriteSetChange>
     pub fn try_access_path_into_write_set_change(
         &self,
         state_key_hash: String,
@@ -263,6 +268,11 @@ impl<'a, R: MoveResolverExt + ?Sized> MoveConverter<'a, R> {
                     state_key_hash,
                     resource: typ.into(),
                 }),
+                Path::ResourceGroup(typ) => WriteSetChange::DeleteResource(DeleteResource {
+                    address: access_path.address.into(),
+                    state_key_hash,
+                    resource: typ.into(),
+                }),
             },
             WriteOp::Modification(val) | WriteOp::Creation(val) => match access_path.get_path() {
                 Path::Code(_) => WriteSetChange::WriteModule(WriteModule {
@@ -271,6 +281,11 @@ impl<'a, R: MoveResolverExt + ?Sized> MoveConverter<'a, R> {
                     data: MoveModuleBytecode::new(val).try_parse_abi()?,
                 }),
                 Path::Resource(typ) => WriteSetChange::WriteResource(WriteResource {
+                    address: access_path.address.into(),
+                    state_key_hash,
+                    data: self.try_into_resource(&typ, &val)?,
+                }),
+                Path::ResourceGroup(typ) => WriteSetChange::WriteResource(WriteResource {
                     address: access_path.address.into(),
                     state_key_hash,
                     data: self.try_into_resource(&typ, &val)?,
@@ -325,7 +340,16 @@ impl<'a, R: MoveResolverExt + ?Sized> MoveConverter<'a, R> {
         if !self.db.indexer_enabled() {
             return Ok(None);
         }
-        let table_info = self.db.get_table_info(handle).unwrap();
+        let table_info = match self.db.get_table_info(handle) {
+            Ok(ti) => ti,
+            Err(_) => {
+                aptos_logger::warn!(
+                    "Table info not found for handle {:?}, can't decode table item. OK for simulation",
+                    handle
+                );
+                return Ok(None); // if table item not found return None anyway to avoid crash
+            },
+        };
         let key = self.try_into_move_value(&table_info.key_type, key)?;
         let value = self.try_into_move_value(&table_info.value_type, value)?;
 
@@ -345,7 +369,16 @@ impl<'a, R: MoveResolverExt + ?Sized> MoveConverter<'a, R> {
         if !self.db.indexer_enabled() {
             return Ok(None);
         }
-        let table_info = self.db.get_table_info(handle).unwrap();
+        let table_info = match self.db.get_table_info(handle) {
+            Ok(ti) => ti,
+            Err(_) => {
+                aptos_logger::warn!(
+                    "Table info not found for handle {:?}, can't decode table item. OK for simulation",
+                    handle
+                );
+                return Ok(None); // if table item not found return None anyway to avoid crash
+            },
+        };
         let key = self.try_into_move_value(&table_info.key_type, key)?;
 
         Ok(Some(DeletedTableData {

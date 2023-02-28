@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Foundation
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::delta_change_set::{deserialize, DeltaChangeSet};
@@ -45,6 +45,10 @@ impl ChangeSetExt {
             change_set,
             checker,
         }
+    }
+
+    pub fn change_set(&self) -> &ChangeSet {
+        &self.change_set
     }
 
     pub fn delta_change_set(&self) -> &DeltaChangeSet {

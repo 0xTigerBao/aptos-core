@@ -1,4 +1,5 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Foundation
+// Parts of the project are originally copyright © Meta Platforms, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
@@ -75,6 +76,9 @@ impl BlockStore {
         sync_info: &SyncInfo,
         mut retriever: BlockRetriever,
     ) -> anyhow::Result<()> {
+        // // update the logical time for quorum store during state sync
+        // self.data_manager.notify_commit(LogicalTime::new(sync_info.highest_commit_cert().ledger_info().ledger_info().epoch(), sync_info.highest_commit_cert().ledger_info().ledger_info().round()), Vec::new()).await;
+
         self.sync_to_highest_commit_cert(
             sync_info.highest_commit_cert().ledger_info(),
             &retriever.network,

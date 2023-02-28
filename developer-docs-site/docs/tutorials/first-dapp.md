@@ -12,15 +12,17 @@ modules.  This dapp will let users publish and share snippets of text on the Apt
 For this tutorial, we will use the Move module [`hello_blockchain`](https://github.com/aptos-labs/aptos-core/tree/main/aptos-move/move-examples/hello_blockchain)
 described in [Your First Move Module](first-move-module.md) and focus on building the user interface around the module.
 
+For a more comprehensive view of this process, see [Build an End-to-End Dapp on Aptos](build-e2e-dapp/index.md).
+
 We will use the:
 
 * [TypeScript SDK](../sdks/ts-sdk/index.md)
-* [Petra Wallet](../guides/install-petra-wallet-extension)
+* [Petra Wallet](../guides/install-petra-wallet.md)
 * [Aptos CLI](../cli-tools/aptos-cli-tool/use-aptos-cli.md)
 
 :::tip Full source code
 
-The full source code for this tutorial is being updated. Meanwhile, the older one is available [here](https://github.com/aptos-labs/aptos-core/tree/53e240003e95c9b865441ea792ab4e1e8134a267/developer-docs-site/static/examples/typescript/dapp-example).
+We recommend becoming familiar with the newer full source code documented in the [Build an End-to-End Dapp on Aptos](build-e2e-dapp/index.md) tutorial. The full source code for this tutorial is still available in the [`dapp-example`](https://github.com/aptos-labs/aptos-core/tree/53e240003e95c9b865441ea792ab4e1e8134a267/developer-docs-site/static/examples/typescript/dapp-example) directory.
 :::
 
 ## Prerequisites
@@ -28,7 +30,7 @@ The full source code for this tutorial is being updated. Meanwhile, the older on
 ### Aptos Wallet
 
 Before starting this tutorial, you'll need a chrome extension wallet to interact with the dapp. You can first install
-the [Petra wallet extension](../guides/install-petra-wallet-extension) for use in this tutorial.
+the [Petra wallet extension](../guides/install-petra-wallet.md) for use in this tutorial.
 
 If you haven't installed the Petra wallet extension before:
 1. Open the Wallet and click **Create a new wallet**. Then click **Create account** to create an Aptos Account.
@@ -50,7 +52,7 @@ Ensure your account has sufficient funds to perform transactions by clicking the
 
 We will also be installing the Aptos CLI so that we can publish 
 
-1. Install the [Aptos CLI](../cli-tools/aptos-cli-tool/install-aptos-cli.md).
+1. Install the [Aptos CLI](../cli-tools/aptos-cli-tool/index.md).
 
 2. Run `aptos init --profile my-first-nft`.
 
@@ -267,7 +269,7 @@ We will use the Aptos CLI to compile and publish the `hello_blockchain` module.
 
 1. Download [the `hello_blockchain` package](https://github.com/aptos-labs/aptos-core/tree/main/aptos-move/move-examples/hello_blockchain).
 
-2. Next, use the `aptos move publish` command (replacing `/path/to/hello_blockchain/` and `<address>`):
+2. Use the `aptos move publish` command (replacing `/path/to/hello_blockchain/` and `<address>`):
 
 ```bash
 aptos move publish --profile my-first-nft --package-dir /path/to/hello_blockchain/ --named-addresses hello_blockchain=<address>
@@ -291,11 +293,12 @@ becomes:
 module 0x5af503b5c379bd69f46184304975e1ef1fa57f422dd193cdad67dc139d532481::message {
 ```
 
-This makes it possible to publish the module for the given account (in this case our wallet account, `0x5af503b5c379bd69f46184304975e1ef1fa57f422dd193cdad67dc139d532481`).
+This makes it possible to publish the module for the given account, in this case our wallet account:
+`0x5af503b5c379bd69f46184304975e1ef1fa57f422dd193cdad67dc139d532481`
 
 Assuming that your account has enough funds to execute the transaction, you can now publish the `hello_blockchain` module in your account. If you refresh the app, you will see that the account sequence number has increased from 0 to 1.
 
-You can also verify that the module was published by going to the [Aptos Explorer](https://explorer.aptoslabs.com/) and looking up your account. If you scroll down to the Account Modules section, you should see something like the following:
+You can also verify the module was published by going to the [Aptos Explorer](https://explorer.aptoslabs.com/) and looking up your account. If you scroll down to the *Account Modules* section, you should see something resembling:
 
 ```json
 {
@@ -367,14 +370,14 @@ You can also verify that the module was published by going to the [Aptos Explore
 }
 ```
 
-Make a note of `"name": "message"`, we will use it in the next section.
+Make a note of `"name": "message"; we will use it in the next section.
 </details>
 
 <details>
 <summary>Publish the `hello_blockchain` module with the TS SDK</summary>
-We will use the Aptos CLI to compile the `hello_blockchain` module and use the TS SDK to publish the module.
+We will use the Aptos CLI to compile the `hello_blockchain` module and use the [TypeScript SDK](../sdks/ts-sdk/index.md) to publish the module.
 
-1. Download [the `hello_blockchain` package](https://github.com/aptos-labs/aptos-core/tree/main/aptos-move/move-examples/hello_blockchain).
+1. Download the [`hello_blockchain`](https://github.com/aptos-labs/aptos-core/tree/main/aptos-move/move-examples/hello_blockchain) package.
 
 2. Next, use the `aptos move compile --save-metadata` command (replacing `/path/to/hello_blockchain/` and `<address>`):
 
@@ -400,48 +403,46 @@ becomes:
 module 0x5af503b5c379bd69f46184304975e1ef1fa57f422dd193cdad67dc139d532481::message {
 ```
 
-This makes it possible to publish the module for the given account (in this case our wallet account, `0x5af503b5c379bd69f46184304975e1ef1fa57f422dd193cdad67dc139d532481`).
+This makes it possible to publish the module for the given account, in this case our wallet account: `0x5af503b5c379bd69f46184304975e1ef1fa57f422dd193cdad67dc139d532481`
 
-The `--save-metadata` saves the package metadata in the package's build directory. If set, package metadata should be generated and stored in the package's build directory. This metadata can be used to construct a transaction to publish a package.
+The `--save-metadata` argument, if set, generates and saves the package metadata in the package's `build` directory. This metadata can be used to construct a transaction to publish a package.
 
-At this point, we should have a `build` folder in the same directory of our `hello_blockchain` folder. Next step would be to publish the module to the chain. 
-The TS SDK provides us a `publishPackage()` function where it expects to get both package metadata and the move module as `Uint8Array`. We can do it by converting both `package-metadata.bcs` file and the `bytecode_modules/message.mv` module into hex strings (using a command), and then to `Uint8Array` (using the SDK).
+At this point, we should have a `build` folder in the same directory of our `hello_blockchain` folder. The next step would be to publish the module to the chain. 
+The TypeScript SDK provides us a `publishPackage()` function where it expects to get both package metadata and the move module as `Uint8Array`. We can supply this by converting both the `package-metadata.bcs` file and the `bytecode_modules/message.mv` module into hex strings (using a command, below), and then to `Uint8Array` (using the SDK).
 
-Convert `package-metadata.bcs` file and the `bytecode_modules/message.mv` module into hex strings
+Convert `package-metadata.bcs` file and the `bytecode_modules/message.mv` module into hex strings:
 
-`cd` into the `hello_blockchain/build/Example` directory
+Navigate to the `hello_blockchain/build/Example` directory:
 ```bash
 cd hello_blockchain/build/Example
 ```
 
-Convert `package-metadata.bcs` to a hex string. On Mac and Linux we can use the command
+Convert `package-metadata.bcs` to a hex string. On macOS and Linux, we can use the command:
 ```bash
 cat package-metadata.bcs | od -v -t x1 -A n | tr -d ' \n'
 ```
 That will output a hex string we can later use.
 
-Convert `message.mv` to a hex string. On Mac and Linux we can use the command
+Convert `message.mv` to a hex string. On Mac and Linux we can use the command:
 ```bash
 cat bytecode_modules/message.mv | od -v -t x1 -A n | tr -d ' \n'
 ```
-That will output a hex string we can later use.
+That will also output a hex string we can later use. Keep both of the hex strings ready!
 
-Keep both of the hex strings so later we can use them!
+Back to our react app, let's add a button to click on to publish the module, use the `publishPackage` function TypeScript SDK provides us and display a link to get the account's resources where we can see the published module.
 
-Back to our react app, let's add a button to click on to publish the module, use the `publishPackage` function TS SDK provides us and display a link to get the account's resources where we can see the published module.
+We would need our account's private key to initialize an `AptosAccount` to publish the module with. You can get the private key from the Petra Wallet by going to: **Settings** > **Manage account**, show the private key, and copy that field. Since a private key is *very* sensitive data, we dont want to expose it in the code but rather hold it in an `.env` file and use it from there.
 
-We would need our account's private key (you can get the private key from the Petra Wallet by going to settings, manage account, show the private key, and copy that field) to initialize an `AptosAccount` to publish the module with. Since a private key is a VERY sensitive data, we dont want to expose it in the code, but to hold it in an `.env` file and use it from there.
-
-1. Create a new `.env` file on the `root` of the project and add to the file
+1. Create a new `.env` file on the `root` of the project and add to the file:
 ```bash
 REACT_APP_ACCOUNT_PK=<account-private-key>
 ```
 Make sure to restart the local server so the app will load the new `.env` file.
 
-2. Add the following to `src/App.tsx`, where 
+2. Add the following to `src/App.tsx`, where:
 - `process.env.REACT_APP_ACCOUNT_PK` holds the account private key. 
-- `<package-metadata.bcs hex string>` is the `package-metadata.bcs` hex string output we get from the previous step
-- `<message.mv hex string>` is the `message.mv` hex string output we get from the previous step
+- `<package-metadata.bcs hex string>` is the `package-metadata.bcs` hex string output we get from the previous step.
+- `<message.mv hex string>` is the `message.mv` hex string output we get from the previous step.
 
 ```typescript
 import { Types, AptosClient, AptosAccount, HexString, TxnBuilderTypes} from "aptos";
@@ -523,7 +524,7 @@ We wrap our publishing attempt in a `try / catch` block to catch any potential e
 
 #### Publish the package
 
-Click on the "Publish Package" button, once the module has published we should see a `Account modules` link and by clicking it we should see something like the following
+Click the **Publish Package** button. Once the module has been published, we should see an **Account modules** link. By clicking it, we should see something resembling:
 
 ```json
 {
@@ -595,7 +596,7 @@ Click on the "Publish Package" button, once the module has published we should s
 }
 ```
 
-Make a note of `"name": "message"`, we will use it in the next section.
+Make a note of `"name": "message"`; we will use it in the next section.
 </details>
 
 ### Add module publishing instructions to the dapp
@@ -636,8 +637,8 @@ function App() {
 
 New users will be able to use this command to create a page for their account.
 
-In this step, we can also hide the `Publish Package` button when the module does exist.
-Update the `button` on the `src/App.tsx` with
+In this step, we can also hide the **Publish Package** button when the module does exist.
+Update the `button` on the `src/App.tsx` with:
 
 ```typescript
 function App() {
@@ -836,7 +837,7 @@ function App() {
 }
 ```
 
-That concludes this tutorial.
+This concludes the tutorial.
 
 ## Supporting documentation
 

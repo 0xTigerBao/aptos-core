@@ -1,10 +1,11 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Foundation
+// Parts of the project are originally copyright © Meta Platforms, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
     access_path_cache::AccessPathCache,
     counters::*,
-    data_cache::StorageAdapter,
+    data_cache::{MoveResolverWithVMMetadata, StorageAdapter},
     errors::{convert_epilogue_error, convert_prologue_error, expect_only_successful_execution},
     logging::AdapterLogSchema,
     move_vm_ext::{MoveResolverExt, MoveVmExt, SessionExt, SessionId},
@@ -22,8 +23,8 @@ use aptos_types::{
     account_config::{TransactionValidation, APTOS_TRANSACTION_VALIDATION, CORE_CODE_ADDRESS},
     chain_id::ChainId,
     on_chain_config::{
-        ApprovedExecutionHashes, FeatureFlag, Features, GasSchedule, GasScheduleV2, OnChainConfig,
-        StorageGasSchedule, Version,
+        ApprovedExecutionHashes, ConfigurationResource, FeatureFlag, Features, GasSchedule,
+        GasScheduleV2, OnChainConfig, StorageGasSchedule, TimedFeatures, Version,
     },
     transaction::{AbortInfo, ExecutionStatus, TransactionOutput, TransactionStatus},
     vm_status::{StatusCode, VMStatus},
@@ -117,13 +118,22 @@ impl AptosVMImpl {
         // If no chain ID is in storage, we assume we are in a testing environment and use ChainId::TESTING
         let chain_id = ChainId::fetch_config(&storage).unwrap_or_else(ChainId::test);
 
+        let timestamp = ConfigurationResource::fetch_config(&storage)
+            .map(|config| config.last_reconfiguration_time())
+            .unwrap_or(0);
+
+        let mut timed_features = TimedFeatures::new(chain_id, timestamp);
+        if let Some(profile) = crate::AptosVM::get_timed_feature_override() {
+            timed_features = timed_features.with_override_profile(profile)
+        }
+
         let inner = MoveVmExt::new(
             native_gas_params,
             abs_val_size_gas_params,
             gas_feature_version,
-            features.is_enabled(FeatureFlag::TREAT_FRIEND_AS_PRIVATE),
-            features.is_enabled(FeatureFlag::VM_BINARY_FORMAT_V6),
             chain_id.id(),
+            features.clone(),
+            timed_features,
         )
         .expect("should be able to create Move VM; check if there are duplicated natives");
 
@@ -517,7 +527,18 @@ impl AptosVMImpl {
         &self,
         module: &ModuleId,
     ) -> Option<RuntimeModuleMetadataV1> {
-        aptos_framework::get_vm_metadata(&self.move_vm, module.clone())
+        if self.features.is_enabled(FeatureFlag::VM_BINARY_FORMAT_V6) {
+            aptos_framework::get_vm_metadata(&self.move_vm, module.clone())
+        } else {
+            aptos_framework::get_vm_metadata_v0(&self.move_vm, module.clone())
+        }
+    }
+
+    pub fn new_move_resolver<'r, R: MoveResolverExt>(
+        &self,
+        r: &'r R,
+    ) -> MoveResolverWithVMMetadata<'r, '_, R> {
+        MoveResolverWithVMMetadata::new(r, &self.move_vm)
     }
 
     pub fn new_session<'r, R: MoveResolverExt>(
@@ -578,8 +599,9 @@ pub(crate) fn get_transaction_output<A: AccessPathCache, S: MoveResolverExt>(
         .checked_sub(gas_left)
         .expect("Balance should always be less than or equal to max gas amount");
 
-    let session_out = session.finish().map_err(|e| e.into_vm_status())?;
-    let change_set_ext = session_out.into_change_set(ap_cache, change_set_configs)?;
+    let change_set_ext = session
+        .finish(ap_cache, change_set_configs)
+        .map_err(|e| e.into_vm_status())?;
     let (delta_change_set, change_set) = change_set_ext.into_inner();
     let (write_set, events) = change_set.into_inner();
 
